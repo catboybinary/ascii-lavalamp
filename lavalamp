@@ -1,0 +1,114 @@
+#!/usr/bin/python
+import curses, random, numpy, signal, time
+from curses import wrapper
+import argparse
+
+class Blob:
+    values = ['#','%','=','-','-','.']
+    bounds = (0,0)
+    velocity = numpy.array([0.0,0.0])
+    position = numpy.array([0.0,0.0])
+    radius = 1
+    color = 0
+
+    def __init__(self,col,b,vely,velx,r):
+        self.color = col
+        self.bounds = b
+        self.radius = r
+        self.position = numpy.array([float(random.randint(self.radius,self.bounds[0]-self.radius)),float(random.randint(self.radius,self.bounds[1]-self.radius))])
+        self.velocity = numpy.array([vely,velx])
+
+    def move(self):
+        theta = numpy.deg2rad(3)
+        rot = numpy.array([[numpy.cos(theta), -numpy.sin(theta)], [numpy.sin(theta), numpy.cos(theta)]])
+        self.velocity = numpy.dot(rot, self.velocity)
+        
+    
+        if self.position[0]+self.velocity[0]>=self.bounds[0]-self.radius or self.position[0]+self.velocity[0]<2:
+            self.velocity[0] *= -1
+        if self.position[1]+self.velocity[1]>=self.bounds[1]-self.radius or self.position[1]+self.velocity[1]<2:
+            self.velocity[1] *= -1
+        self.position += self.velocity
+
+    def draw(blob,area,mask):
+        for ii in range(blob.radius+1):
+            i = blob.radius-ii
+            for a in range(0,360,20):
+                pos = blob.position.copy()
+                pos[0]+=(numpy.cos(numpy.deg2rad(a))*i)/1.5
+                pos[1]+=numpy.sin(numpy.deg2rad(a))*i
+                #area.addstr(0,0,str(pos[0])+"              ")
+                if (int(pos[0]),int(pos[1])) in mask:
+                    area.addch(int(pos[0]),int(pos[1]),ord(Blob.values[i+5-blob.radius]),blob.color)
+
+        if(int(blob.position[0]),int(blob.position[1])) in mask: 
+            area.addch(int(blob.position[0]),int(blob.position[1]),ord(Blob.values[4-blob.radius]),blob.color)
+
+parser = argparse.ArgumentParser(description="cute little ascii-lamp. made by ~binary")
+parser.add_argument("-p", "--path", help="Specify a path to the ascii-art. You're welcome to contribute to the public repository (/home/binary/ascii-lamps)",default="/home/binary/ascii-lamps/default", type=str)
+parser.add_argument("-d", "--disable-truecolor", help="Disables truecolor and uses default red and green",action="store_true")
+parser.add_argument("-s", "--sleep", help="Specifies the delay between simulation frames in milliseconds. Default: 100",type=int,default=100)
+args = parser.parse_args()
+path = args.path
+
+def main(stdscr):
+    # Clear screen
+    stdscr.clear()
+    curses.curs_set(0)
+    if curses.can_change_color() and curses.has_extended_color_support() and not args.disable_truecolor:
+        curses.init_color(1, 400,0,500)
+        curses.init_color(2, 1000,50,700)
+    curses.init_pair(1, 1, curses.COLOR_BLACK)
+    curses.init_pair(2, 2, curses.COLOR_BLACK)
+    curses.init_pair(3, curses.COLOR_BLACK, curses.COLOR_BLACK)
+
+    longest = 0
+    mask = []
+    blobs = []
+    lines = []
+    
+    with open(path, "r") as lamp:
+        # SETUP
+        lines = lamp.readlines()
+    
+        stdscr.move(stdscr.getmaxyx()[0]-len(lines)-1,0)
+        for line in lines:
+            if len(line)>longest: longest = len(line)
+        size = (len(lines)+1,longest)
+        area = stdscr.subpad(size[0],size[1],stdscr.getyx()[0],int(stdscr.getmaxyx()[1]/2-longest/2)+1)
+        for line in lines:
+            area.addstr(line)
+
+        for y in range(size[0]):
+            for x in range(size[1]):
+                b=bin(area.inch(y,x))[2:][-8:]
+                if int(b,2)==ord('X'): mask.append((y,x))
+        #SETUP END
+        blob1 = Blob(curses.color_pair(2),size,random.random(),random.random(),random.randint(2,5))
+        blob2 = Blob(curses.color_pair(2),size,random.random(),random.random(),random.randint(2,5))
+        blobs.append(blob1)
+        blobs.append(blob2)
+
+        prev = stdscr.getmaxyx()
+        
+    while True:
+        if prev != stdscr.getmaxyx():
+            area.clear()
+            stdscr.move(stdscr.getmaxyx()[0]-len(lines)-1,0)
+            area.mvwin(stdscr.getyx()[0],int(stdscr.getmaxyx()[1]/2-longest/2)+1)
+            area.move(0,0)
+            stdscr.clear()
+            stdscr.noutrefresh()
+            for line in lines:
+                area.addstr(line)
+            curses.doupdate()
+            prev = stdscr.getmaxyx()
+        for yx in mask:
+            area.addch(yx[0],yx[1],ord(str('*')),curses.color_pair(1))
+        for blob in blobs:
+            blob.move()
+            blob.draw(area,mask)
+        area.refresh()
+        time.sleep(float(args.sleep)/1000.0)
+
+wrapper(main)
